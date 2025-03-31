@@ -95,7 +95,7 @@ type FanotifyWatcher struct {
 	poller     *FdPoller
 	mask       uint64
 	flags      uint
-	mountPath  string
+	mountPath  atomic.Value
 }
 
 func NewFanotifyWatcher(flags uint, eventFFlags uint, addMask uint64, addFlags uint) (*FanotifyWatcher, error) {
@@ -141,7 +141,7 @@ func (fw *FanotifyWatcher) Add(path string) error {
 	}
 
 	if fw.flags&unix.FAN_MARK_FILESYSTEM == unix.FAN_MARK_FILESYSTEM {
-		fw.mountPath = path
+		fw.mountPath.Store(path)
 	}
 	return nil
 }
@@ -226,8 +226,8 @@ func (fw *FanotifyWatcher) readEvents() {
 				select {
 				case fw.Errors <- ErrEventOverflow:
 				case <-fw.done:
+					return
 				}
-				return
 			}
 			// Check if filehandles are supported (>5.1)
 			if raw.Fd == unix.FAN_NOFD {
@@ -252,7 +252,7 @@ func (fw *FanotifyWatcher) readEvents() {
 					}
 
 					if mount == nil {
-						mount, err = os.Open(fw.mountPath)
+						mount, err = os.Open(fw.mountPath.Load().(string))
 						if err != nil {
 							select {
 							case fw.Errors <- fmt.Errorf("Failed to get mount_fd of %v: %v", fw.mountPath, err):
